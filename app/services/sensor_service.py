@@ -1,7 +1,7 @@
+#fastapi/app/services/sensor_service.py
 from app.database.repositories import SensorRepository
 from app.core.exceptions import SensorDataNotFoundError
 from app.utils.stats_calculator import calculate_stats
-from app.routers.websocket import manager  # Nueva importación
 import logging
 import asyncio
 
@@ -101,6 +101,9 @@ class SensorService:
     async def broadcast_humidity_update():
         """Envía una actualización de humedad a todos los clientes WebSocket conectados"""
         try:
+            # ⬇️ Importar aquí, localmente (evita import circular)
+            from app.routers.websocket import manager
+
             humidity_data = SensorService.get_humidity_stats()
             await manager.broadcast({
                 "type": "humidity_update",
