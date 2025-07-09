@@ -1,7 +1,9 @@
 from app.database.repositories import SensorRepository
 from app.core.exceptions import SensorDataNotFoundError
 from app.utils.stats_calculator import calculate_stats
+from app.routers.websocket import manager  # Nueva importación
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -95,3 +97,14 @@ class SensorService:
         except Exception as e:
             logger.error(f"Error inesperado en get_humidity_stats: {str(e)}")
             raise
+    @staticmethod
+    async def broadcast_humidity_update():
+        """Envía una actualización de humedad a todos los clientes WebSocket conectados"""
+        try:
+            humidity_data = SensorService.get_humidity_stats()
+            await manager.broadcast({
+                "type": "humidity_update",
+                "data": humidity_data
+            })
+        except Exception as e:
+            logger.error(f"Error broadcasting humidity update: {str(e)}")
