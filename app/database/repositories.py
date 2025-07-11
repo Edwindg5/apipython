@@ -1,3 +1,4 @@
+#fastapi/app/database/repositories.py
 from app.database.connection import DatabaseConnection
 from app.core.exceptions import SensorDataNotFoundError
 import mysql.connector
@@ -53,7 +54,8 @@ class SensorRepository:
             query = """
             SELECT pressure, recorded_at 
             FROM sensor_readings 
-            WHERE recorded_at >= NOW() - INTERVAL 24 HOUR
+            WHERE sensor_id = 6
+            AND recorded_at >= NOW() - INTERVAL 7 DAY
             AND pressure IS NOT NULL
             ORDER BY recorded_at
             """
@@ -84,13 +86,16 @@ class SensorRepository:
             query = """
             SELECT humidity, recorded_at 
             FROM sensor_readings 
-            WHERE recorded_at >= NOW() - INTERVAL 24 HOUR
+            WHERE sensor_id = 5
+            AND recorded_at >= NOW() - INTERVAL 7 DAY
             AND humidity IS NOT NULL
             ORDER BY recorded_at
             """
             logger.debug(f"Ejecutando query humedad: {query}")
             cursor.execute(query)
             result = cursor.fetchall()
+            
+            logger.debug(f"Resultados crudos: {result}")
             
             if not result:
                 logger.warning("No se encontraron datos de humedad")
@@ -99,7 +104,57 @@ class SensorRepository:
             logger.info(f"Obtenidos {len(result)} registros de humedad")
             return {"humidity": [r['humidity'] for r in result], "data": result}
         except Exception as e:
-            logger.error(f"Error en get_humidity_stats: {str(e)}")
+            logger.error(f"Error en get_humidity_stats: {str(e)}", exc_info=True)
+            raise
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
+                
+    @staticmethod
+    def get_humidity_history(days: int = 7):
+        """Obtiene datos históricos de humedad"""
+        conn = None
+        try:
+            conn = DatabaseConnection.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            query = """
+            SELECT humidity, recorded_at 
+            FROM sensor_readings 
+            WHERE sensor_id = 5
+            AND recorded_at >= NOW() - INTERVAL %s DAY
+            AND humidity IS NOT NULL
+            ORDER BY recorded_at
+            """
+            cursor.execute(query, (days,))
+            return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error en get_humidity_history: {str(e)}")
+            raise
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
+
+    @staticmethod
+    def get_pressure_history(days: int = 7):
+        """Obtiene datos históricos de presión"""
+        conn = None
+        try:
+            conn = DatabaseConnection.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            query = """
+            SELECT pressure, recorded_at 
+            FROM sensor_readings 
+            WHERE sensor_id = 6
+            AND recorded_at >= NOW() - INTERVAL %s DAY
+            AND pressure IS NOT NULL
+            ORDER BY recorded_at
+            """
+            cursor.execute(query, (days,))
+            return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error en get_pressure_history: {str(e)}")
             raise
         finally:
             if conn and conn.is_connected():

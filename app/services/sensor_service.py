@@ -1,9 +1,10 @@
 #fastapi/app/services/sensor_service.py
-from app.database.repositories import SensorRepository
 from app.core.exceptions import SensorDataNotFoundError
+from app.database.repositories import SensorRepository
+from app.utils.probability_calculator import ProbabilityAnalyzer
 from app.utils.stats_calculator import calculate_stats
+import numpy as np
 import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,20 @@ class SensorService:
                 raise SensorDataNotFoundError("No hay datos de presión disponibles")
                 
             stats = calculate_stats(data['pressure'])
+            
+            # Nuevos cálculos de probabilidad
+            pressure_values = np.array(data['pressure'])
+            prob_analysis = {
+                "probability_analysis": {
+                    "binomial": ProbabilityAnalyzer.binomial_analysis(
+                        pressure_values,
+                        lambda x: x > np.mean(pressure_values)  # Éxito = presión > media
+                    )
+                }
+            }
+            
             logger.info(f"Estadísticas de presión calculadas: {stats}")
             
-            # Formatear fechas para respuesta JSON
             formatted_data = []
             for entry in data['data']:
                 formatted_entry = entry.copy()
@@ -59,6 +71,7 @@ class SensorService:
             
             return {
                 "stats": stats,
+                "probability": prob_analysis,
                 "data": formatted_data
             }
         except SensorDataNotFoundError as e:
@@ -78,9 +91,20 @@ class SensorService:
                 raise SensorDataNotFoundError("No hay datos de humedad disponibles")
                 
             stats = calculate_stats(data['humidity'])
+            
+            # Nuevos cálculos de probabilidad
+            humidity_values = np.array(data['humidity'])
+            prob_analysis = {
+                "probability_analysis": {
+                    "binomial": ProbabilityAnalyzer.binomial_analysis(
+                        humidity_values,
+                        lambda x: x > 80  # Éxito = humedad > 80%
+                    )
+                }
+            }
+            
             logger.info(f"Estadísticas de humedad calculadas: {stats}")
             
-            # Formatear fechas para respuesta JSON
             formatted_data = []
             for entry in data['data']:
                 formatted_entry = entry.copy()
@@ -89,6 +113,7 @@ class SensorService:
             
             return {
                 "stats": stats,
+                "probability": prob_analysis,
                 "data": formatted_data
             }
         except SensorDataNotFoundError as e:
@@ -97,17 +122,55 @@ class SensorService:
         except Exception as e:
             logger.error(f"Error inesperado en get_humidity_stats: {str(e)}")
             raise
-    @staticmethod
-    async def broadcast_humidity_update():
-        """Envía una actualización de humedad a todos los clientes WebSocket conectados"""
-        try:
-            # ⬇️ Importar aquí, localmente (evita import circular)
-            from app.routers.websocket import manager
 
-            humidity_data = SensorService.get_humidity_stats()
-            await manager.broadcast({
-                "type": "humidity_update",
-                "data": humidity_data
-            })
+    @staticmethod
+    def get_joint_probability_analysis(days: int = 7):
+        try:
+            logger.info("Calculando probabilidad conjunta humedad-presión...")
+            
+            # Obtener datos históricos
+            humidity_data = SensorRepository.get_humidity_history(days)
+            pressure_data = SensorRepository.get_pressure_history(days)
+            
+            if not humidity_data or not pressure_data:
+                raise SensorDataNotFoundError("Datos insuficientes para análisis conjunto")
+                
+            # Convertir a arrays numpy
+            h_values = np.array([x['humidity'] for x in humidity_data])
+            p_values = np.array([x['pressure'] for x in pressure_data])
+            
+            # Calcular probabilidad conjunta
+            joint_prob, bins_h, bins_p = ProbabilityAnalyzer.calculate_joint_probability(
+                h_values, p_values
+            )
+            
+            # Calcular análisis binomial para humedad
+            binomial_h = ProbabilityAnalyzer.binomial_analysis(
+                h_values,
+                lambda x: x > 80  # Éxito = humedad > 80%
+            )
+            
+            # Calcular análisis binomial para presión
+            binomial_p = ProbabilityAnalyzer.binomial_analysis(
+                p_values,
+                lambda x: x > np.mean(p_values)  # Éxito = presión > media
+            )
+            
+            return {
+                "joint_probability": {
+                    "table": joint_prob.to_dict(),
+                    "humidity_bins": bins_h.tolist(),
+                    "pressure_bins": bins_p.tolist()
+                },
+                "binomial_analysis": {
+                    "humidity": binomial_h,
+                    "pressure": binomial_p
+                },
+                "data_points": len(h_values)
+            }
+        except SensorDataNotFoundError as e:
+            logger.warning(str(e))
+            return {"message": str(e)}
         except Exception as e:
-            logger.error(f"Error broadcasting humidity update: {str(e)}")
+            logger.error(f"Error en get_joint_probability_analysis: {str(e)}")
+            raise
