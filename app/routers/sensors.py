@@ -27,8 +27,8 @@ def get_humidity_stats():
         handle_app_exception(e)
 
 @router.get("/joint-probability")
-def get_joint_probability(days: int = 7):
+def get_joint_probability():
     try:
-        return SensorService.get_joint_probability_analysis(days)  # Corregido de get_joiNt_probability_analysis
+        return SensorService.get_joint_probability_analysis()
     except Exception as e:
         handle_app_exception(e)

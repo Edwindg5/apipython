@@ -160,3 +160,54 @@ class SensorRepository:
             if conn and conn.is_connected():
                 cursor.close()
                 conn.close()
+    @staticmethod
+    def get_last_50_humidity_readings():
+        """Obtiene los últimos 50 registros de humedad"""
+        conn = None
+        try:
+            conn = DatabaseConnection.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            query = """
+            SELECT humidity, recorded_at 
+            FROM sensor_readings 
+            WHERE sensor_id = 5
+            AND humidity IS NOT NULL
+            ORDER BY recorded_at DESC
+            LIMIT 50
+            """
+            cursor.execute(query)
+            result = cursor.fetchall()
+            return result
+        except Exception as e:
+            logger.error(f"Error en get_last_50_humidity_readings: {str(e)}")
+            raise
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
+
+    @staticmethod
+    def get_last_50_pressure_readings():
+        """Obtiene los últimos 50 registros de presión"""
+        conn = None
+        try:
+            conn = DatabaseConnection.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            query = """
+            SELECT pressure, recorded_at 
+            FROM sensor_readings 
+            WHERE sensor_id = 6
+            AND pressure IS NOT NULL
+            ORDER BY recorded_at DESC
+            LIMIT 50
+            """
+            cursor.execute(query)
+            result = cursor.fetchall()
+            return result
+        except Exception as e:
+            logger.error(f"Error en get_last_50_pressure_readings: {str(e)}")
+            raise
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
