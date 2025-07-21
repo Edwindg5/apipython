@@ -1,4 +1,3 @@
-#fastapi/app/database/repositories.py
 from app.database.connection import DatabaseConnection
 from app.core.exceptions import SensorDataNotFoundError
 import mysql.connector
@@ -160,6 +159,7 @@ class SensorRepository:
             if conn and conn.is_connected():
                 cursor.close()
                 conn.close()
+
     @staticmethod
     def get_last_50_humidity_readings():
         """Obtiene los últimos 50 registros de humedad"""
@@ -206,6 +206,66 @@ class SensorRepository:
             return result
         except Exception as e:
             logger.error(f"Error en get_last_50_pressure_readings: {str(e)}")
+            raise
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
+
+    @staticmethod
+    def get_last_50_temperature_readings():
+        """Obtiene los últimos 50 registros de temperatura"""
+        conn = None
+        try:
+            conn = DatabaseConnection.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            query = """
+            SELECT temperature, recorded_at 
+            FROM sensor_readings 
+            WHERE sensor_id = 7
+            AND temperature IS NOT NULL
+            ORDER BY recorded_at DESC
+            LIMIT 50
+            """
+            cursor.execute(query)
+            result = cursor.fetchall()
+            
+            if not result:
+                raise SensorDataNotFoundError("No se encontraron datos de temperatura")
+                
+            return result
+        except Exception as e:
+            logger.error(f"Error en get_last_50_temperature_readings: {str(e)}")
+            raise
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
+
+    @staticmethod
+    def get_last_50_voltage_readings():
+        """Obtiene los últimos 50 registros de voltaje"""
+        conn = None
+        try:
+            conn = DatabaseConnection.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            query = """
+            SELECT voltage, recorded_at 
+            FROM sensor_readings 
+            WHERE sensor_id = 9
+            AND voltage IS NOT NULL
+            ORDER BY recorded_at DESC
+            LIMIT 50
+            """
+            cursor.execute(query)
+            result = cursor.fetchall()
+            
+            if not result:
+                raise SensorDataNotFoundError("No se encontraron datos de voltaje")
+                
+            return result
+        except Exception as e:
+            logger.error(f"Error en get_last_50_voltage_readings: {str(e)}")
             raise
         finally:
             if conn and conn.is_connected():

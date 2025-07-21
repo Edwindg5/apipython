@@ -1,4 +1,3 @@
-#fastapi/app/routers/sensors.py
 from fastapi import APIRouter, Depends
 from app.services.sensor_service import SensorService
 from app.core.exceptions import handle_app_exception
@@ -23,6 +22,20 @@ def get_pressure_stats():
 def get_humidity_stats():
     try:
         return SensorService.get_humidity_stats()
+    except Exception as e:
+        handle_app_exception(e)
+
+@router.get("/temperature-stats")
+def get_temperature_stats():
+    try:
+        return SensorService.get_temperature_stats()
+    except Exception as e:
+        handle_app_exception(e)
+
+@router.get("/voltage-stats")
+def get_voltage_stats():
+    try:
+        return SensorService.get_voltage_stats()
     except Exception as e:
         handle_app_exception(e)
 
