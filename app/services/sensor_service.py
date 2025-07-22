@@ -1,3 +1,4 @@
+# app/services/sensor_service.py
 from app.core.exceptions import SensorDataNotFoundError
 from app.database.repositories import SensorRepository
 from app.utils.probability_calculator import ProbabilityAnalyzer
@@ -5,6 +6,7 @@ from app.utils.stats_calculator import calculate_stats
 import numpy as np
 import pandas as pd
 import logging
+from scipy import stats
 
 logger = logging.getLogger(__name__)
 
@@ -257,4 +259,79 @@ class SensorService:
             return {"message": str(e)}
         except Exception as e:
             logger.error(f"Error en get_joint_probability_analysis: {str(e)}", exc_info=True)
+            raise
+
+    @staticmethod
+    def get_pressure_distribution(days: int = 7):
+        """
+        Obtiene datos de presión para generar una distribución normal (campana de Gauss)
+        y un histograma para visualización en el frontend.
+        
+        Args:
+            days: Número de días de datos históricos a recuperar
+            
+        Returns:
+            dict: Contiene:
+                - distribution: puntos para la curva de Gauss (x, y)
+                - histogram: datos para el histograma (bins, counts)
+                - raw_data: valores y timestamps originales
+        """
+        try:
+            logger.info(f"Obteniendo distribución de presión para últimos {days} días...")
+            raw_data = SensorRepository.get_pressure_history(days)
+            
+            if not raw_data:
+                raise SensorDataNotFoundError("No hay datos de presión disponibles")
+                
+            # Extraer valores y timestamps, filtrando NULLs
+            pressure_values = [float(r['pressure']) for r in raw_data if r['pressure'] is not None]
+            timestamps = [r['recorded_at'].isoformat() for r in raw_data if r['pressure'] is not None]
+            
+            if not pressure_values:
+                raise SensorDataNotFoundError("Todos los valores de presión son NULL")
+                
+            # Calcular parámetros de la distribución normal
+            mean = np.mean(pressure_values)
+            std = np.std(pressure_values)
+            
+            # Generar puntos para la curva de Gauss
+            x = np.linspace(min(pressure_values), max(pressure_values), 100)
+            y = stats.norm.pdf(x, mean, std)
+            
+            # Preparar datos para el histograma
+            hist, bin_edges = np.histogram(pressure_values, bins=10, density=True)
+            
+            # Construir respuesta
+            response = {
+                "distribution": {
+                    "x": x.tolist(),
+                    "y": y.tolist(),
+                    "mean": float(mean),
+                    "std": float(std)
+                },
+                "histogram": {
+                    "bins": bin_edges.tolist(),
+                    "counts": hist.tolist()
+                },
+                "raw_data": {
+                    "values": pressure_values,
+                    "timestamps": timestamps
+                },
+                "metadata": {
+                    "days": days,
+                    "data_points": len(pressure_values),
+                    "date_range": {
+                        "start": timestamps[0],
+                        "end": timestamps[-1]
+                    }
+                }
+            }
+            
+            return SensorService._ensure_serializable(response)
+            
+        except SensorDataNotFoundError as e:
+            logger.warning(str(e))
+            return {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Error en get_pressure_distribution: {str(e)}", exc_info=True)
             raise

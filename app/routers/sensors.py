@@ -1,3 +1,4 @@
+#app/routers/sensors.py
 from fastapi import APIRouter, Depends
 from app.services.sensor_service import SensorService
 from app.core.exceptions import handle_app_exception
@@ -43,5 +44,12 @@ def get_voltage_stats():
 def get_joint_probability():
     try:
         return SensorService.get_joint_probability_analysis()
+    except Exception as e:
+        handle_app_exception(e)
+
+@router.get("/pressure-distribution/{days}")
+def get_pressure_distribution(days: int = 7):
+    try:
+        return SensorService.get_pressure_distribution(days)
     except Exception as e:
         handle_app_exception(e)
