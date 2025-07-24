@@ -6,6 +6,7 @@ from app.utils.stats_calculator import calculate_stats
 import numpy as np
 import pandas as pd
 import logging
+import math
 from scipy import stats
 
 logger = logging.getLogger(__name__)
@@ -13,16 +14,115 @@ logger = logging.getLogger(__name__)
 class SensorService:
     @staticmethod
     def _ensure_serializable(data):
-        """Asegura que los datos sean serializables a JSON"""
+        """Asegura que los datos sean serializables a JSON, manejando NaN e infinitos"""
         if isinstance(data, (np.generic)):
-            return data.item() if hasattr(data, 'item') else float(data)
+            val = data.item() if hasattr(data, 'item') else float(data)
+            return None if (math.isnan(val) or math.isinf(val)) else val
         elif isinstance(data, (np.ndarray)):
-            return data.tolist()
+            return [None if (math.isnan(x) or math.isinf(x)) else float(x) for x in data.tolist()]
+        elif isinstance(data, float):
+            return None if (math.isnan(data) or math.isinf(data)) else data
         elif isinstance(data, dict):
             return {k: SensorService._ensure_serializable(v) for k, v in data.items()}
         elif isinstance(data, (list, tuple)):
             return [SensorService._ensure_serializable(v) for v in data]
         return data
+
+    @staticmethod
+    def _safe_calculate_distribution(values, mean=None, std=None):
+        """Calcula distribución normal de manera segura"""
+        try:
+            if not values or len(values) == 0:
+                return {"x": [], "y": [], "mean": None, "std": None}
+            
+            # Filtrar valores válidos
+            valid_values = np.array([v for v in values if not (math.isnan(v) or math.isinf(v))])
+            
+            if len(valid_values) == 0:
+                logger.warning("No hay valores válidos para distribución")
+                return {"x": [], "y": [], "mean": None, "std": None}
+            
+            if len(valid_values) == 1:
+                logger.warning("Solo un valor válido, no se puede calcular distribución")
+                return {
+                    "x": [float(valid_values[0])],
+                    "y": [1.0],
+                    "mean": float(valid_values[0]),
+                    "std": 0.0
+                }
+            
+            # Calcular parámetros si no se proporcionaron
+            if mean is None:
+                mean = np.mean(valid_values)
+            if std is None:
+                std = np.std(valid_values, ddof=1)
+            
+            # Verificar que std sea válido
+            if std == 0 or not np.isfinite(std):
+                logger.warning("Desviación estándar inválida, usando distribución uniforme")
+                return {
+                    "x": valid_values.tolist(),
+                    "y": [1.0/len(valid_values)] * len(valid_values),
+                    "mean": float(mean),
+                    "std": None
+                }
+            
+            # Generar puntos para la curva de Gauss
+            x_min = np.min(valid_values) - std
+            x_max = np.max(valid_values) + std
+            x = np.linspace(x_min, x_max, 100)
+            y = stats.norm.pdf(x, mean, std)
+            
+            # Filtrar valores inválidos en el PDF
+            valid_indices = np.isfinite(y)
+            x = x[valid_indices]
+            y = y[valid_indices]
+            
+            return {
+                "x": x.tolist(),
+                "y": y.tolist(),
+                "mean": float(mean) if np.isfinite(mean) else None,
+                "std": float(std) if np.isfinite(std) else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculando distribución: {str(e)}")
+            return {"x": [], "y": [], "mean": None, "std": None}
+
+    @staticmethod
+    def _safe_calculate_histogram(values, bins=10):
+        """Calcula histograma de manera segura"""
+        try:
+            if not values or len(values) == 0:
+                return {"bins": [], "counts": []}
+            
+            # Filtrar valores válidos
+            valid_values = np.array([v for v in values if not (math.isnan(v) or math.isinf(v))])
+            
+            if len(valid_values) == 0:
+                return {"bins": [], "counts": []}
+            
+            if len(valid_values) == 1:
+                return {
+                    "bins": [float(valid_values[0]), float(valid_values[0]) + 0.1],
+                    "counts": [1.0]
+                }
+            
+            # Calcular histograma con densidad
+            hist, bin_edges = np.histogram(valid_values, bins=min(bins, len(valid_values)), density=True)
+            
+            # Filtrar valores inválidos
+            hist = np.array([0.0 if (math.isnan(h) or math.isinf(h)) else float(h) for h in hist])
+            bin_edges = np.array([float(b) if np.isfinite(b) else 0.0 for b in bin_edges])
+            
+            return {
+                "bins": bin_edges.tolist(),
+                "counts": hist.tolist()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculando histograma: {str(e)}")
+            return {"bins": [], "counts": []}
 
     @staticmethod
     def get_sensor_data():
@@ -266,15 +366,6 @@ class SensorService:
         """
         Obtiene datos de presión para generar una distribución normal (campana de Gauss)
         y un histograma para visualización en el frontend.
-        
-        Args:
-            days: Número de días de datos históricos a recuperar
-            
-        Returns:
-            dict: Contiene:
-                - distribution: puntos para la curva de Gauss (x, y)
-                - histogram: datos para el histograma (bins, counts)
-                - raw_data: valores y timestamps originales
         """
         try:
             logger.info(f"Obteniendo distribución de presión para últimos {days} días...")
@@ -289,30 +380,15 @@ class SensorService:
             
             if not pressure_values:
                 raise SensorDataNotFoundError("Todos los valores de presión son NULL")
-                
-            # Calcular parámetros de la distribución normal
-            mean = np.mean(pressure_values)
-            std = np.std(pressure_values)
-            
-            # Generar puntos para la curva de Gauss
-            x = np.linspace(min(pressure_values), max(pressure_values), 100)
-            y = stats.norm.pdf(x, mean, std)
-            
-            # Preparar datos para el histograma
-            hist, bin_edges = np.histogram(pressure_values, bins=10, density=True)
+
+            # Calcular distribución y histograma de manera segura
+            distribution = SensorService._safe_calculate_distribution(pressure_values)
+            histogram = SensorService._safe_calculate_histogram(pressure_values)
             
             # Construir respuesta
             response = {
-                "distribution": {
-                    "x": x.tolist(),
-                    "y": y.tolist(),
-                    "mean": float(mean),
-                    "std": float(std)
-                },
-                "histogram": {
-                    "bins": bin_edges.tolist(),
-                    "counts": hist.tolist()
-                },
+                "distribution": distribution,
+                "histogram": histogram,
                 "raw_data": {
                     "values": pressure_values,
                     "timestamps": timestamps
@@ -321,8 +397,8 @@ class SensorService:
                     "days": days,
                     "data_points": len(pressure_values),
                     "date_range": {
-                        "start": timestamps[0],
-                        "end": timestamps[-1]
+                        "start": timestamps[0] if timestamps else None,
+                        "end": timestamps[-1] if timestamps else None
                     }
                 }
             }
@@ -341,15 +417,6 @@ class SensorService:
         """
         Obtiene datos de temperatura para generar una distribución normal (campana de Gauss)
         y un histograma para visualización en el frontend.
-        
-        Args:
-            days: Número de días de datos históricos a recuperar
-            
-        Returns:
-            dict: Contiene:
-                - distribution: puntos para la curva de Gauss (x, y)
-                - histogram: datos para el histograma (bins, counts)
-                - raw_data: valores y timestamps originales
         """
         try:
             logger.info(f"Obteniendo distribución de temperatura para últimos {days} días...")
@@ -364,30 +431,15 @@ class SensorService:
             
             if not temp_values:
                 raise SensorDataNotFoundError("Todos los valores de temperatura son NULL")
-                
-            # Calcular parámetros de la distribución normal
-            mean = np.mean(temp_values)
-            std = np.std(temp_values)
-            
-            # Generar puntos para la curva de Gauss
-            x = np.linspace(min(temp_values), max(temp_values), 100)
-            y = stats.norm.pdf(x, mean, std)
-            
-            # Preparar datos para el histograma
-            hist, bin_edges = np.histogram(temp_values, bins=10, density=True)
+
+            # Calcular distribución y histograma de manera segura
+            distribution = SensorService._safe_calculate_distribution(temp_values)
+            histogram = SensorService._safe_calculate_histogram(temp_values)
             
             # Construir respuesta
             response = {
-                "distribution": {
-                    "x": x.tolist(),
-                    "y": y.tolist(),
-                    "mean": float(mean),
-                    "std": float(std)
-                },
-                "histogram": {
-                    "bins": bin_edges.tolist(),
-                    "counts": hist.tolist()
-                },
+                "distribution": distribution,
+                "histogram": histogram,
                 "raw_data": {
                     "values": temp_values,
                     "timestamps": timestamps
@@ -396,8 +448,8 @@ class SensorService:
                     "days": days,
                     "data_points": len(temp_values),
                     "date_range": {
-                        "start": timestamps[0],
-                        "end": timestamps[-1]
+                        "start": timestamps[0] if timestamps else None,
+                        "end": timestamps[-1] if timestamps else None
                     }
                 }
             }
@@ -416,15 +468,6 @@ class SensorService:
         """
         Obtiene datos de humedad para generar una distribución normal (campana de Gauss)
         y un histograma para visualización en el frontend.
-        
-        Args:
-            days: Número de días de datos históricos a recuperar
-            
-        Returns:
-            dict: Contiene:
-                - distribution: puntos para la curva de Gauss (x, y)
-                - histogram: datos para el histograma (bins, counts)
-                - raw_data: valores y timestamps originales
         """
         try:
             logger.info(f"Obteniendo distribución de humedad para últimos {days} días...")
@@ -439,30 +482,15 @@ class SensorService:
             
             if not humidity_values:
                 raise SensorDataNotFoundError("Todos los valores de humedad son NULL")
-                
-            # Calcular parámetros de la distribución normal
-            mean = np.mean(humidity_values)
-            std = np.std(humidity_values)
-            
-            # Generar puntos para la curva de Gauss
-            x = np.linspace(min(humidity_values), max(humidity_values), 100)
-            y = stats.norm.pdf(x, mean, std)
-            
-            # Preparar datos para el histograma
-            hist, bin_edges = np.histogram(humidity_values, bins=10, density=True)
+
+            # Calcular distribución y histograma de manera segura
+            distribution = SensorService._safe_calculate_distribution(humidity_values)
+            histogram = SensorService._safe_calculate_histogram(humidity_values)
             
             # Construir respuesta
             response = {
-                "distribution": {
-                    "x": x.tolist(),
-                    "y": y.tolist(),
-                    "mean": float(mean),
-                    "std": float(std)
-                },
-                "histogram": {
-                    "bins": bin_edges.tolist(),
-                    "counts": hist.tolist()
-                },
+                "distribution": distribution,
+                "histogram": histogram,
                 "raw_data": {
                     "values": humidity_values,
                     "timestamps": timestamps
@@ -471,8 +499,8 @@ class SensorService:
                     "days": days,
                     "data_points": len(humidity_values),
                     "date_range": {
-                        "start": timestamps[0],
-                        "end": timestamps[-1]
+                        "start": timestamps[0] if timestamps else None,
+                        "end": timestamps[-1] if timestamps else None
                     }
                 }
             }

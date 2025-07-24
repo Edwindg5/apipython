@@ -1,3 +1,4 @@
+#sensors.py
 from fastapi import APIRouter, HTTPException
 from app.services.sensor_service import SensorService
 from app.core.exceptions import handle_app_exception
