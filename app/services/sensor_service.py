@@ -335,3 +335,153 @@ class SensorService:
         except Exception as e:
             logger.error(f"Error en get_pressure_distribution: {str(e)}", exc_info=True)
             raise
+
+    @staticmethod
+    def get_temperature_distribution(days: int = 7):
+        """
+        Obtiene datos de temperatura para generar una distribución normal (campana de Gauss)
+        y un histograma para visualización en el frontend.
+        
+        Args:
+            days: Número de días de datos históricos a recuperar
+            
+        Returns:
+            dict: Contiene:
+                - distribution: puntos para la curva de Gauss (x, y)
+                - histogram: datos para el histograma (bins, counts)
+                - raw_data: valores y timestamps originales
+        """
+        try:
+            logger.info(f"Obteniendo distribución de temperatura para últimos {days} días...")
+            raw_data = SensorRepository.get_temperature_history(days)
+            
+            if not raw_data:
+                raise SensorDataNotFoundError("No hay datos de temperatura disponibles")
+                
+            # Extraer valores y timestamps, filtrando NULLs
+            temp_values = [float(r['temperature']) for r in raw_data if r['temperature'] is not None]
+            timestamps = [r['recorded_at'].isoformat() for r in raw_data if r['temperature'] is not None]
+            
+            if not temp_values:
+                raise SensorDataNotFoundError("Todos los valores de temperatura son NULL")
+                
+            # Calcular parámetros de la distribución normal
+            mean = np.mean(temp_values)
+            std = np.std(temp_values)
+            
+            # Generar puntos para la curva de Gauss
+            x = np.linspace(min(temp_values), max(temp_values), 100)
+            y = stats.norm.pdf(x, mean, std)
+            
+            # Preparar datos para el histograma
+            hist, bin_edges = np.histogram(temp_values, bins=10, density=True)
+            
+            # Construir respuesta
+            response = {
+                "distribution": {
+                    "x": x.tolist(),
+                    "y": y.tolist(),
+                    "mean": float(mean),
+                    "std": float(std)
+                },
+                "histogram": {
+                    "bins": bin_edges.tolist(),
+                    "counts": hist.tolist()
+                },
+                "raw_data": {
+                    "values": temp_values,
+                    "timestamps": timestamps
+                },
+                "metadata": {
+                    "days": days,
+                    "data_points": len(temp_values),
+                    "date_range": {
+                        "start": timestamps[0],
+                        "end": timestamps[-1]
+                    }
+                }
+            }
+            
+            return SensorService._ensure_serializable(response)
+            
+        except SensorDataNotFoundError as e:
+            logger.warning(str(e))
+            return {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Error en get_temperature_distribution: {str(e)}", exc_info=True)
+            raise
+
+    @staticmethod
+    def get_humidity_distribution(days: int = 7):
+        """
+        Obtiene datos de humedad para generar una distribución normal (campana de Gauss)
+        y un histograma para visualización en el frontend.
+        
+        Args:
+            days: Número de días de datos históricos a recuperar
+            
+        Returns:
+            dict: Contiene:
+                - distribution: puntos para la curva de Gauss (x, y)
+                - histogram: datos para el histograma (bins, counts)
+                - raw_data: valores y timestamps originales
+        """
+        try:
+            logger.info(f"Obteniendo distribución de humedad para últimos {days} días...")
+            raw_data = SensorRepository.get_humidity_history(days)
+            
+            if not raw_data:
+                raise SensorDataNotFoundError("No hay datos de humedad disponibles")
+                
+            # Extraer valores y timestamps, filtrando NULLs
+            humidity_values = [float(r['humidity']) for r in raw_data if r['humidity'] is not None]
+            timestamps = [r['recorded_at'].isoformat() for r in raw_data if r['humidity'] is not None]
+            
+            if not humidity_values:
+                raise SensorDataNotFoundError("Todos los valores de humedad son NULL")
+                
+            # Calcular parámetros de la distribución normal
+            mean = np.mean(humidity_values)
+            std = np.std(humidity_values)
+            
+            # Generar puntos para la curva de Gauss
+            x = np.linspace(min(humidity_values), max(humidity_values), 100)
+            y = stats.norm.pdf(x, mean, std)
+            
+            # Preparar datos para el histograma
+            hist, bin_edges = np.histogram(humidity_values, bins=10, density=True)
+            
+            # Construir respuesta
+            response = {
+                "distribution": {
+                    "x": x.tolist(),
+                    "y": y.tolist(),
+                    "mean": float(mean),
+                    "std": float(std)
+                },
+                "histogram": {
+                    "bins": bin_edges.tolist(),
+                    "counts": hist.tolist()
+                },
+                "raw_data": {
+                    "values": humidity_values,
+                    "timestamps": timestamps
+                },
+                "metadata": {
+                    "days": days,
+                    "data_points": len(humidity_values),
+                    "date_range": {
+                        "start": timestamps[0],
+                        "end": timestamps[-1]
+                    }
+                }
+            }
+            
+            return SensorService._ensure_serializable(response)
+            
+        except SensorDataNotFoundError as e:
+            logger.warning(str(e))
+            return {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Error en get_humidity_distribution: {str(e)}", exc_info=True)
+            raise

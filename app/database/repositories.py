@@ -272,3 +272,28 @@ class SensorRepository:
             if conn and conn.is_connected():
                 cursor.close()
                 conn.close()
+
+    @staticmethod
+    def get_temperature_history(days: int = 7):
+        """Obtiene datos históricos de temperatura"""
+        conn = None
+        try:
+            conn = DatabaseConnection.get_connection()
+            cursor = conn.cursor(dictionary=True)
+            query = """
+            SELECT temperature, recorded_at 
+            FROM sensor_readings 
+            WHERE sensor_id = 7
+            AND recorded_at >= NOW() - INTERVAL %s DAY
+            AND temperature IS NOT NULL
+            ORDER BY recorded_at
+            """
+            cursor.execute(query, (days,))
+            return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Error en get_temperature_history: {str(e)}")
+            raise
+        finally:
+            if conn and conn.is_connected():
+                cursor.close()
+                conn.close()
