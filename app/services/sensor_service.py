@@ -512,4 +512,4 @@ class SensorService:
             return {"error": str(e)}
         except Exception as e:
             logger.error(f"Error en get_humidity_distribution: {str(e)}", exc_info=True)
-            raise
+            raise 
